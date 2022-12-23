@@ -1,0 +1,426 @@
+---
+title: "Health and Social-Economics Factors Influencing Life Expectancy, a report using linear regression"
+author: "Yinzhou Liu"
+date: "12/17/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Introduction
+
+From ancient mythologies where Gilgamesh chases for immortality  to Qin Shi Huang’ attempting to achieve eternity , mankind has done everything imaginable to not die. While it is uncertain if mankind can ever achieve such remarkable feat, what we have achieved is a very impressive increase in life expectancy. Why is life expectancy important? Life expectancy is an important indicator that tells the overall physical health of a population, any shift in this statistics can be used to describe changes in mortality, most notably, it forms the human development index along with GDP according to the UN(Murillo,2021).
+\
+\
+Scholars have analyzed this statistics in the past.Like a paper that focuses only on environmental effects in 2009 by Mariani, Perez-Barahona and Raffin, where they explained how some countries fall into a vicious cycle of low life expectancy correlating with low environmental level through mathematical modeling and other papers where scholars analyzed life expectancy only in certain regions, like Freeman, et al in 2020 where they combined both quantitative and opinion-based analysis for life expectancy only in Ethiopia, Brazil and USA.This report is different in the sense that I’m performing analysis for life expectancy in all countries using regressions. I’m attempting to cover more than one variable, from social economics to health, and estimating their effects on our interested outcome variable. We can interpret important information from coefficients as to which variable positively or negative influences life expectancy, this provides preliminary guidelines for countries who aim to increase life expectancy .
+\
+\
+
+# Method
+
+Our data set is compiled from GHO(global health observatory) and UNESCO websites by user “mmattson”, it features life expectancy data from 2000 to 2016 for all countries. We will be splitting the data into training and testing sets for model validation purposes. An explanation of the variables used can be found in the appendix.
+\
+\
+Our research aims to investigate various health and social economic factors effect on life expectancy by finding the "best fitted" linear regression model.We first fit a model with every reasonable variable to achieve a full model. Then we check the two additional conditions. Using scatter plot of predicted and actual value to check condition 1, and pairwise scatter-plots between predictors to check condition 2. Condition 1 would hold if scattering of points on the scatter plot is random and condition 2 would hold if we observe linear relations between predictors in our pairwise plots. If both condition holds, we proceed to graph out residual plots of predicted value, predictor variables and QQ plots to check for assumptions. Linearity assumption holds if no apparent pattern exists in residual plots, uncorrelated error assumption holds if no large clusters of residuals exists separated from the rest, constant variance exists if no fanning patterns exists in residual plots and normality assumption holds if our QQ plot shows not a lot of deviation from the diagonal line. If above assumptions and/or condition doesn't hold, apply Boxcox transform on variables, if the assumptions and conditions hold or we have tried transforming variables, continue with the model and acknowledge the limitations.
+\
+\
+After the previous step, we should have a full model, we aim to reduce the model by first checking for multicollinearity, and remove any variable with VIF larger than 5. We proceed to assess each variables P-values from our full model, remove any insignificant variables, this leads us to a reduced model. But using partial F-test via ANOVA, we test whether the removed variables are significant, if the P-value is large enough, we conclude that removing the variable is a good choice. We repeat this step several times until all of our variables are significant according to the p-value. If we have achieve different models with same number of variables, we compare them each by AIC and adjusted-R squared, those with lower AIC and higher adjusted-R squared is deemed optimal. We should arrive at an ideal model by now, recheck the conditions and assumptions and perform transformation if necessary.
+\
+\
+With our ideal model, we check for outliers, leverages and influential points. We will check influential points via DFFITS, we then consider the points, evaluate whether they are removable based on the context. At last, we validate our model by performing the same variable transformation on our testing data separated earlier and using the ideal model from training data, then we compare the coefficients of the variables and the R-squared for our training and testing data, the model is deemed valid if the R-squared is similar and the coefficients are within two standard errors. If deemed invalid, interpret as such, acknowledge the limitations and try to figure out why.
+\
+\
+
+
+
+```{r,include = FALSE}
+
+library(gridExtra)
+library(grid)
+library(gt)
+library(MASS)
+library(modelsummary)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+```
+
+```{r,include = FALSE, fig.width = 8, fig.height = 8}
+## check the summary of our model
+
+
+
+expcl<- read.csv("lifeexpcl.csv")
+expcl <- expcl %>% mutate(avgvac = (measles + polio + diphtheria)/3)
+
+#reading and splitting data
+n <-nrow(expcl)
+set.seed(2258)
+train <- sample(n, round(0.8*n), replace = FALSE)
+traindata <- expcl[train,]
+testdata <- expcl[-train,]
+```
+
+```{r, fig.width = 8, fig.height = 8, include = FALSE}
+boxtrmort<-ggplot(aes(y=age1_4mort), data=traindata) +
+geom_boxplot(color='black', fill='grey')
+
+boxtemort<-ggplot(aes(y=age1_4mort), data=testdata) +
+geom_boxplot(color='black', fill='grey')
+
+boxtrexp<-ggplot(aes(y=life_expect), data=traindata) +
+geom_boxplot(color='black', fill='grey')
+
+boxteexp<-ggplot(aes(y=life_expect), data=testdata) +
+geom_boxplot(color='black', fill='grey')
+
+boxtrbmi<-ggplot(aes(y=bmi), data=traindata) +
+geom_boxplot(color='black', fill='grey')
+
+boxtebmi<-ggplot(aes(y=bmi), data=testdata) +
+geom_boxplot(color='black', fill='grey')
+
+grid.arrange(boxtrmort,boxtemort,boxtrexp, boxteexp, boxtrbmi, boxtebmi,nrow=3)
+
+
+```
+# Results
+
+Summary tables consisting of our response and predictor variables of both training and testing data can be seen below,  we do see an overall similar means in most variables between the two data sets, but differences in quartile data. This can be expected due to the limited number of data entries, with only 37 data entries for testing data and 146 for training data, this suggests potential problems during validation steps. More discussions on this topic can be seen in the next section. \
+
+
+
+
+
+```{r pressure, include=FALSE}
+##select variables
+
+traindt <- select(traindata,c("country","region","year","life_expect","age1_4mort","alcohol","bmi","age5_19thin","age5_19ob","basic_water","che_gdp","avgvac")) %>% drop_na()
+testdt <- select(testdata,c("country","region","year","life_expect","age1_4mort","alcohol","bmi","age5_19thin","age5_19ob","basic_water","che_gdp","avgvac")) %>% drop_na() 
+```
+
+```{r, fig.height = 6, fig.width = 6, echo = FALSE}
+cfootnote = c(("* = for age 5 to 19"),("Health expenditure as percentage of GDP"),("*** = Average Vax rate for measles,polio and diphtheria" ))
+
+trainsum <- traindt %>% select(c("life_expect","age1_4mort","alcohol","bmi","age5_19thin","age5_19ob","basic_water","che_gdp","avgvac"))%>% summary()%>% kable(caption = "Summary stats of training dataset",col.names = c("Life Expect.","Mortalityage 1-4","Alcohol Consump/L","BMI","Thin%*","Obese%*","%Access basic water","Health Exp**","Avg Vax***"),format="latex") %>% kable_styling(latex_options="scale_down") %>% add_footnote(label = cfootnote, notation = "alphabet") %>% kable_styling(latex_options = "HOLD_position")
+
+testsum <-  testdt %>% select(c("life_expect","age1_4mort","alcohol","bmi","age5_19thin","age5_19ob","basic_water","che_gdp","avgvac"))%>% summary()%>% kable(caption = "Summary stats of testing dataset",col.names = c("Life Expect.","Mortality age1-4","Alcohol Consump/L","BMI","5Thin%*","Obese%*","%Acces s basic water","Health Exp**","Avg Vax***"),format="latex") %>% kable_styling(latex_options="scale_down") %>% add_footnote(label = cfootnote, notation = "alphabet") %>% kable_styling(latex_options = "HOLD_position")
+trainsum
+testsum
+```
+
+According to pairwise scatter plots, our full model doesn't satisfy condition 2, after Boxcox transforming, we use new variables, we use square root of alcohol, $percentage\; of\; those\; who\; are\; thin\;aged\; 5-19^{0.33}$, \
+$percentage\;access \;to\; basic \;water^{4.20}$, \
+$avg\; vax\; rate\; across\; measles, polio,diphtheria^{5.95}$. \
+
+\
+For the transformed full model now, normality assumption holds according to QQ plot, linearity assumptions holds as our residual plots improve and we can say we don't observe any patterns, constant variance assumption might not hold as we can see higher residuals for countries/data points with lower life expectancy, uncorrelated error assumption holds as we can only observe one large cluster of residuals with outliers. We will acknowledge this limitation and proceeds. All our variables have VIF <5, so no variable is removed. We reduce our model by observing P-values, and remove variables alcohol and average vaccination rate due to insignificance due to high P-values. We test using partial F-test via ANOVA and both full and reduced model 1, and our resulted P-value suggested we should remove the variables. We attempt to further reduce our model by removing two more variables with bigger p-value but slightly significant, we repeat our partial F-test and this time our P-value suggests we should keep the variables. By comparing the AIC and adjusted R-squared, we can see that reduced model 1 with 6 predictors has the lowest AIC with similar adjusted R-squared despite having less variables, this is our ideal model.
+\
+\
+A total of 11 leverages, 6 outliers and 10 influential points exist. Given the context, only countries where major natural disasters and conflicts occurred can be removed(like Haiti Earthquake in 2010)as such change in life expectancy can't be explained by our variables. Upon inspection, no data is removed, none fit the criteria and every data is valuable when researching on a global level.
+\
+\
+According to Figure 1 in the appendix, condition 1 holds for our final model, we conclude that our linear model is sufficient, condition 2 might not hold due to only observing linear relations between few predictors. The four assumptions all hold except for constant variance, experiencing similar larger variances for lower life expectancy countries as observed below and figure 2 in appendix.
+\
+\
+Validation is done by running the same model on our testing data set and applying the same transformation,from table below we observe similar coefficients for some variables between training and testing but other coefficients are different beyond two standard error, we observe similar adjusted R-squared. The two conditions doesn't hold for this model and the same can be said about the four assumptions, our model is deemed invalid by using our testing data.
+\
+\
+\
+
+
+
+
+
+```{r,include = FALSE}
+##full model 
+full1 <- c("age1_4mort","alcohol","bmi","age5_19thin","age5_19ob","basic_water","che_gdp")
+fullmod <- lm(life_expect ~ age1_4mort+alcohol+bmi+age5_19thin+age5_19ob + avgvac+basic_water+che_gdp, data = traindt)
+
+msummary(fullmod)
+resid <- fullmod$residuals
+
+```
+
+
+
+
+
+```{r,fig.width = 16, fig.height = 16, include=FALSE}
+##conditional 2 for full model
+pairs(~age1_4mort+alcohol+bmi+age5_19thin+age5_19ob+avgvac+basic_water+che_gdp, data=traindt)
+```
+
+```{r, include = FALSE}
+##transform to satisfy conditions
+library(car)
+summary(powerTransform(cbind(traindt$age1_4mort,
+                             traindt$alcohol,
+                             traindt$bmi,
+                             traindt$age5_19thin,
+                             traindt$age5_19ob,
+                             traindt$avgvac,
+                             traindt$basic_water,
+                             traindt$che_gdp
+                             )))
+traintransfull <- mutate(traindt, alcoholtrans = alcohol^(0.5),
+                         age5_19thintrans = age5_19thin^(0.33),
+                         basic_watertrans = basic_water^(4.20),
+                         avgvactrans = avgvac^(5.95)
+                         )
+
+fullmodtrans <- lm(life_expect ~ age1_4mort+alcoholtrans+bmi+age5_19thintrans+age5_19ob+avgvactrans+basic_watertrans+che_gdp, data = traintransfull)
+
+residtrans <- fullmodtrans$residuals
+```
+```{r, figure.height = 8, figure.width =8, include = FALSE}
+##residual vs fitted
+yhattransfull <- fitted(fullmodtrans)
+
+plot(yhattransfull, residtrans
+     )
+```
+```{r, figure.height = 8, figure.width =8, include = FALSE}
+##residual vs predictor for full untransformed
+par(mfrow = c(2, 4))
+plot(traintransfull$age1_4mort, residtrans)
+plot(traintransfull$alcoholtrans, residtrans)
+plot(traintransfull$bmi, residtrans)
+plot(traintransfull$age5_19thintrans, residtrans)
+plot(traintransfull$age5_19ob, residtrans)
+plot(traintransfull$avgvactrans, residtrans)
+plot(traintransfull$basic_watertrans, residtrans)
+plot(traintransfull$che_gdp, residtrans)
+```
+
+```{r, figure.height = 8, figure.width =8,include = FALSE}
+##qq plot for full untransformed
+qqnorm(residtrans)
+qqline(residtrans)
+```
+```{r, figure.height = 8, figure.width =8, include = FALSE}
+##checking outlier
+n <- nrow(traintransfull)
+p <- length(coef(fullmodtrans))-1
+
+Hcut <- 2*((p+1)/n)
+DFFITScut <- 2*sqrt((p+1)/n)
+DFBETAcut <- 2/sqrt(n)
+Dcut <- qf(0.5, p+1, n-p-1)
+
+##leverage
+h <- hatvalues(fullmodtrans)
+which(h>Hcut)
+##outlier
+r <- rstandard(fullmodtrans)
+which(r < -2 | r > 2)
+##influential points
+fits <- dffits(fullmodtrans)
+which(abs(fits) > DFFITScut)
+
+```
+```{r, figure.height = 8, figure.width =8,include = FALSE}
+summary(traintransfull)
+
+```
+
+```{r, figure.height = 8, figure.width =8,include = FALSE}
+traintransfull[c(29,32,39,55,80,83,91,98,100,126,135 ),]
+traintransfull[c(16,55,61,69,78,95),]
+```
+
+```{r, figure.height = 8, figure.width =8,include = FALSE}
+##checking multicollinearity
+vif(fullmodtrans)
+```
+```{r, figure.height = 8, figure.width =8,include = FALSE}
+##reduce
+summary(fullmodtrans)
+```
+```{r, figure.height = 8, figure.width =8,include = FALSE}
+##removing alcohol, avgvac,  che_gdp
+redmod1 <- lm(life_expect ~ age1_4mort+bmi+age5_19thintrans+age5_19ob+basic_watertrans+che_gdp, data = traintransfull)
+summary(redmod1)
+
+```
+```{r, figure.height = 3, figure.width =4,include= FALSE}
+par(mfrow = c(1, 2))
+##assumption checks for final model
+residred1 <- redmod1$residuals
+yhatred1 <- fitted(redmod1)
+
+plot(yhatred1,residred1, xlab = "Predicted Value", ylab= "Residual", main = "Residual vs Predicted")
+##for FINAL model
+qqnorm(residred1)
+qqline(residred1)
+
+
+```
+
+
+```{r, figure.height = 8, figure.width =8,include = FALSE}
+redmod2 <- lm(life_expect ~ age1_4mort+bmi+age5_19thintrans++basic_watertrans, data = traintransfull)
+anova(redmod1,fullmodtrans)
+anova(redmod2,redmod1)
+```
+
+```{r, figure.height = 8, figure.width =8, include = FALSE}
+AIC(redmod2)
+AIC(redmod1)
+AIC(fullmodtrans)
+
+```
+
+
+
+
+```{r, figure.height = 8, figure.width =8, echo = FALSE}
+##validation via testing data set
+testred1 <- mutate(testdt, alcoholtrans = alcohol^(0.5),
+                         age5_19thintrans = age5_19thin^(0.33),
+                         basic_watertrans = basic_water^(4.20),
+                         avgvactrans = avgvac^(5.95)
+                         )
+
+testredmod1 <- lm(life_expect ~ age1_4mort+bmi+age5_19thintrans+age5_19ob+basic_watertrans+che_gdp, data = testred1)
+models <- list("Training model" = redmod1, "Testing model" = testredmod1)
+msummary(models, titles = "Table 1")
+```
+# Discussion
+
+\
+From our table below, for our final training model, on an average for a country,we do see a very steep negative slope on child mortality rate, a 1252 decrease in life expectancy per 1% point increase in mortality rate for those age 1-4, we also expect a 1.265 decrease in life expectancy per 1 point increase in BMI, a 0.189 increase in life expectancy per 1 point increase in percentage of obesity among age 5-19 and a 0.188 increase in life expectancy per 1% point increase in current health expenditure as percentage of GDP. Interpretation for thinness prevalent in age 5-19 and access to basic water are harder due to transformations, but we can see a 4.19 drop in life expectancy per 1% point increase in $percentage\; of \;prevalent \;of \;thinness \;in \;age \;5-19 ^{0.33}$ and a 0.00000004 increase in life expectancy per 1% point in $percentage\; access\; to\; basic\; water^{4.2}$. These coefficients explains these variables influence on life expectancy on a global level, and can be used as guidelines when a government aims to increase life expectancy.
+\
+\
+```{r, figure.height = 3, figure.width =4,echo = FALSE}
+par(mfrow = c(1, 2))
+##assumption checks for final model
+residred1 <- redmod1$residuals
+yhatred1 <- fitted(redmod1)
+
+plot(yhatred1,residred1, xlab = "Predicted Value", ylab= "Residual", main = "Residual vs Predicted")
+##for FINAL model
+qqnorm(residred1)
+qqline(residred1)
+
+
+```
+
+## Limitations:
+\
+The model doesn’t satisfy the constant variance assumption even after transformation as observed above, this leads to low prediction accuracy for countries with very low life expectancy values, it can’t be corrected due to the nature of the data, the model is also not validated due to limited data in testing set, good representation of the variables cannot be guaranteed,thus achieving very different coefficients.
+Given the nature of our research topic, our data entries are limited. One reason that our model isn’t validated is because by splitting into training and testing set, we are limiting only about 35 data points during the validation step.  The model is deemed invalid, so we should interpret with care but it can still serve as guidelines for policy makers, and interpret coefficients as trends rather than precise estimates.
+
+\
+\pagebreak
+  
+    
+      
+        
+          
+
+
+
+# Appendix
+
+\
+\
+
+An explanation of variables used, all numerical.\
+life_expect: Life expectancy in years.\
+age1_rmot: Mortality rate in age 1-4.\
+alcohol: Per capita consumption per litre of pure alcohol.\
+bmi: BMI, body mass index.\
+age5_19thin: Prevalence of thinness in age5-19, in percentage.\
+age5_19ob: Prevalence of obesity in age5-19, in percentage.\
+basic_water: Access to basic water, in percentage.\
+che_gdp : Current health expenditure as percentage of GDP, in percentage.\
+avgvac: Average vaccination rate across measles, polio, diphtheria, in percentage.\
+\
+\
+\
+\
+
+\begin{center}
+Figure 1: Plots checking for additional conditions for final model
+\end{center}
+
+```{r, figure.height = 3, figure.width =4,echo = FALSE}
+##rechecking condition 2 for final model
+
+##checking additional condition 1 for full model
+yhat <- fitted(fullmod)
+y <-traindt$life_expect
+
+plot(y,yhat)+abline(a = 0, b = 1)
+
+
+
+pairs(~age1_4mort+bmi+age5_19thintrans+age5_19ob+basic_watertrans+che_gdp, data=traintransfull, main = "Figure Pairwise scatterplot of variables")
+
+```
+
+```{r, figure.height = 3, figure.width =4, include = FALSE}
+##rechecking condition 1 and 2 for final model on TESTING data
+
+yhattest <- fitted(testredmod1)
+y <-testred1$life_expect
+plot(y,yhattest, main = "Predicted vs actual Y value",xlab = "Actual y value", ylab = "Predicted y value")+abline(a = 0, b = 1)
+
+pairs(~age1_4mort+bmi+age5_19thintrans+age5_19ob+basic_watertrans+che_gdp, data=testred1, main = "Figure Pairwise scatterplot of variables")
+
+
+```
+\begin{center}
+Figure 2: Remaining residual plots for final model
+\end{center}
+
+
+```{r, figure.height = 3, figure.width =4,include = FALSE}
+par(mfrow = c(1, 2))
+##assumption checks for final model for TESTING DATA
+residred1test <-testredmod1$residuals
+yhatred1test <- fitted(testredmod1)
+
+plot(yhatred1test,residred1test, xlab = "Predicted Value", ylab= "Residual", main = "Residual vs Predicted")
+##for FINAL model
+qqnorm(residred1test)
+qqline(residred1test)
+
+```
+```{r, figure.height = 3, figure.width =3, echo = FALSE}
+##residual vs predictor for FINAL mode
+par(mfrow = c(2, 3))
+plot(traintransfull$age1_4mort, residtrans, xlab = "Mortality rate in age1-4", ylab= "Residuals")
+plot(traintransfull$bmi, residtrans, xlab = "BMI", ylab= "Residuals")
+plot(traintransfull$age5_19thintrans, residtrans, xlab= "Thinness in age5-19 transformed",ylab= "Residuals")
+plot(traintransfull$age5_19ob, residtrans, xlab = "Obesity in age5-19", ylab = "Residuals" )
+plot(traintransfull$basic_watertrans, residtrans, xlab = "Acess to basic water transformed",ylab= "Residuals")
+plot(traintransfull$che_gdp, residtrans, xlab = "CHE as % of GDP",ylab= "Residuals")
+
+```
+
+## Citation
+\
+
+Murillo, P. I. L. (2021, July 14). The life expectancy: What is it and why does it matter. CENIE. Retrieved October 19, 2022, from https://cenie.eu/en/blogs/age-society/life-expectancy-what-it-and-why-does-it-matter 
+\
+\
+Mariani, F., Pérez-Barahona, A., & Raffin, N. (2009, December 2). Life expectancy and the environment. Journal of Economic Dynamics and Control. Retrieved October 19, 2022, from https://www.sciencedirect.com/science/article/pii/S0165188909002164?casa_token=Oy2OecoPqwIAAAAA%3AKH2azMuYdj4QvqE2V2NQ2VLc98iuyQyiJtK0RE2ipxpBNoy6zLkQNZDVioiswi6q7ybTXemKjt-x 
+\
+\
+Freeman, T., Gesesew, H. A., Bambra, C., Giugliani, E. R. J., Popay, J., Sanders, D., Macinko, J., Musolino, C., & Baum, F. (2020, November 10). Why do some countries do better or worse in life expectancy relative to income? an analysis of Brazil, Ethiopia, and the United States of America - International Journal for equity in health. BioMed Central. Retrieved October 20, 2022, from https://equityhealthj.biomedcentral.com/articles/10.1186/s12939-020-01315-z 
+\
+\
+Kabir, M. (2008). Determinants of Life Expectancy in Developing Countries. Retrieved October 20, 2022, from https://www.jstor.org/stable/40376184?searchText=life%20expectancy%20developing&searchUri=%2Faction%2FdoBasicSearch%3FQuery%3Dlife%2Bexpectancy%2Bdeveloping&ab_segments=0%2Fbasic_search_gsv2%2Fcontrol&refreqid=fastly-default%3A0b04f948b1b29dfc6eba08c0325479cf 
+\
+\
+modelsummary: Beautiful, customizable, publication-ready model summaries in R. Retrieved December 19, 2022, from
+https://www.rdocumentation.org/packages/modelsummary/versions/0.2.0
+\
+\
+Vincent A. modelsummary: regression tables with side-by-side models. Retrieved December 19, 2022, from https://vincentarelbundock.github.io/modelsummary/articles/modelsummary.html
